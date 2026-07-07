@@ -1,0 +1,6 @@
+{
+  "name": "archived",
+  "description": "Personal memory bucket: auto-captures what you did each session, remembers durable facts, and injects where-you-left-off context at session start. Token-lean by design.",
+  "version": "0.1.0",
+  "author": { "name": "Aran" }
+}

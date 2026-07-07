@@ -1,0 +1,11 @@
+{
+  "name": "archived-dev",
+  "owner": { "name": "Aran" },
+  "plugins": [
+    {
+      "name": "archived",
+      "source": "./plugin",
+      "description": "Personal memory bucket — portable, token-lean memory for Claude Code"
+    }
+  ]
+}

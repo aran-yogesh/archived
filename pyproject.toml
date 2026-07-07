@@ -1,0 +1,20 @@
+[project]
+name = "archived"
+version = "0.1.0"
+description = "Personal memory bucket: one MCP server, token-lean memories, plugs into Claude Code, Codex, and any MCP client"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.2.0"]
+
+[project.scripts]
+archived = "archived.cli:main"
+archived-server = "archived.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["archived"]
