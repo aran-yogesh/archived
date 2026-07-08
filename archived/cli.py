@@ -5,6 +5,7 @@ Commands:
   archived ingest               read a capture JSON from stdin (SessionEnd)
   archived search <query...>    search from the terminal
   archived recent               show the session diary
+  archived backfill             embed memories missing embeddings
 """
 
 import argparse
@@ -69,6 +70,11 @@ def _cmd_recent(conn, args):
         print(f"#{e['id']} {e['day']}: {e['headline']}")
 
 
+def _cmd_backfill(conn, args):
+    """Embed memories that were saved without embeddings."""
+    print(f"embedded {store.backfill_embeddings(conn)} memories")
+
+
 def main():
     """Parse arguments and dispatch to a subcommand."""
     p = argparse.ArgumentParser(prog="archived")
@@ -89,6 +95,9 @@ def main():
     sp = sub.add_parser("recent", help="show session diary")
     sp.add_argument("--limit", type=int, default=7)
     sp.set_defaults(fn=_cmd_recent)
+
+    sp = sub.add_parser("backfill", help="embed memories missing embeddings")
+    sp.set_defaults(fn=_cmd_backfill)
 
     args = p.parse_args()
     conn = store.connect()

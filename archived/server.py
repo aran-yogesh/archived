@@ -77,6 +77,7 @@ def get_memory(memory_id: int) -> str:
     mem = store.get(_db(), memory_id)
     if not mem:
         return f"No memory #{memory_id}."
+    store.mark_recalled(_db(), [memory_id])
     parts = [f"#{mem['id']} [{mem['type']}] {mem['headline']}"]
     if mem["body"]:
         parts.append(mem["body"])

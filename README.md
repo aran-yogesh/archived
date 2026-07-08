@@ -33,8 +33,19 @@ Three memory types:
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cd archived && uv sync && uv run pytest   # 22 tests should pass
+cd archived && uv sync && uv run pytest   # all tests should pass
 ```
+
+Optional semantic search (hybrid BM25 + embedding retrieval, merged with
+reciprocal rank fusion): install the `semantic` extra, then embed any
+memories saved before it:
+
+```bash
+uv sync --extra semantic     # pulls fastembed (BAAI/bge-small-en-v1.5)
+uv run archived backfill     # embed existing memories
+```
+
+Without the extra, everything silently stays keyword-only.
 
 ### Claude Code (full experience: tools + skill + auto-capture)
 
@@ -67,13 +78,14 @@ Same command: `uv run --directory /path/to/archived archived-server` (stdio).
 uv run archived search xgboost     # search from the terminal
 uv run archived recent             # session diary
 uv run archived hot my-project     # show a hot slot
+uv run archived backfill           # embed memories missing embeddings
 ```
 
 Debug log for the capture hook: `~/.archived/hook.log`.
 
 ## Roadmap
 
-- [ ] Semantic search: embeddings column already in the schema (sqlite-vec)
+- [x] Semantic search: hybrid BM25 + embeddings via the `semantic` extra
 - [ ] Codex auto-capture when Codex ships lifecycle hooks
 - [ ] Sync/multi-device (the DB is one file — trivially syncable)
 - [ ] Web dashboard for browsing/editing memories

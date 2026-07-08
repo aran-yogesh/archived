@@ -5,6 +5,9 @@ description = "Personal memory bucket: one MCP server, token-lean memories, plug
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.2.0"]
 
+[project.optional-dependencies]
+semantic = ["fastembed>=0.4"]
+
 [project.scripts]
 archived = "archived.cli:main"
 archived-server = "archived.server:main"
