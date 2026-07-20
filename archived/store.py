@@ -21,14 +21,18 @@ TYPES = ("fact", "log", "hot")
 
 _RRF_K = 60        # standard reciprocal-rank-fusion constant
 _POOL = 30         # candidates taken from each ranking before merging
-_MIN_COSINE = 0.6  # ignore embedded rows less related than this to the query
+_MIN_COSINE = 0.6         # ignore rows less related than this when searching
+_DEDUP_MIN_COSINE = 0.8   # stricter bar for dedup: only near-identical facts
 
-# boosts applied after the RRF merge; one list membership is worth at
-# least 1/(_RRF_K + _POOL) ~= 0.011, so all of these stay below that
+# boosts applied after the RRF merge. One list membership is worth at least
+# 1/(_RRF_K + _POOL) ~= 0.011, and the boosts below sum to more than that,
+# so the total is capped at _BOOST_CAP (< one membership). That keeps boosts
+# to a tie-breaker between similarly-relevant hits — relevance still wins.
 _BOOST_PROJECT = 0.008   # same project as the search
 _BOOST_TAG = 0.006       # a query term exactly matches a tag
 _BOOST_RECALL = 0.0005   # per recall, capped at 10 recalls
 _BOOST_FRESH = 0.004     # fully fresh log entry, fades over 30 days
+_BOOST_CAP = 0.01        # total boost stays below one RRF rank step
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
@@ -187,11 +191,21 @@ def _keyword_hits(conn, query, opts):
 
 def _semantic_hits(conn, query, opts):
     """Rank embedded memories by cosine similarity to the query; empty
-    when embeddings are unavailable or nothing is related enough."""
+    when embeddings are unavailable or nothing is related enough.
+
+    opts["min_cosine"] sets the relatedness bar (default _MIN_COSINE);
+    the dedup path raises it so only near-identical facts match.
+
+    This scans every embedded row and scores it in Python (no ANN index).
+    That is O(rows) per search — fine for a personal store of hundreds to
+    low thousands; a store an order of magnitude larger would want an
+    approximate-nearest-neighbour index here instead.
+    """
     blob = embed.embed_query(query)
     if blob is None:
         return []
     qvec = embed.to_vector(blob)
+    min_cosine = opts.get("min_cosine", _MIN_COSINE)
     extra, params = _filter_sql(opts)
     sql = f"""
     SELECT {_HIT_COLUMNS}, m.embedding FROM memories m
@@ -201,7 +215,7 @@ def _semantic_hits(conn, query, opts):
     for row in conn.execute(sql, params):
         hit = dict(row)
         sim = embed.cosine(qvec, embed.to_vector(hit.pop("embedding")))
-        if sim >= _MIN_COSINE:
+        if sim >= min_cosine:
             hit["score"] = sim
             hits.append(hit)
     hits.sort(key=lambda h: h["score"], reverse=True)
@@ -220,15 +234,17 @@ def _rrf(keyword, semantic):
 
 def _boosts(hit, query, opts):
     """Small post-merge rank boosts: recalled often, same project as the
-    search, a query term matching a tag, and freshness for logs. All are
-    kept below one list membership so relevance still dominates."""
+    search, a query term matching a tag, and freshness for logs. The total
+    is capped at _BOOST_CAP (below one RRF rank step) so the boosts only
+    break ties between similarly-relevant hits — relevance still dominates."""
     boost = min(hit["recall_count"], 10) * _BOOST_RECALL
     if opts.get("project") and hit["project"] == opts["project"]:
         boost += _BOOST_PROJECT
     tags = set(hit["tags"].split())
     if tags and not tags.isdisjoint(_terms(query)):
         boost += _BOOST_TAG
-    return boost + hit["freshness"] * _BOOST_FRESH
+    boost += hit["freshness"] * _BOOST_FRESH
+    return min(boost, _BOOST_CAP)
 
 
 def search(conn, query, opts=None):
@@ -249,10 +265,17 @@ def search(conn, query, opts=None):
 
 
 def find_similar(conn, memory):
-    """Find existing facts similar to a new one, for the dedup loop."""
+    """Find existing facts similar to a new one, for the dedup loop.
+
+    Uses a stricter cosine bar (_DEDUP_MIN_COSINE) than normal search so
+    that automated ingest only skips near-identical facts, not merely
+    topically-related ones — dropping a genuinely new fact is worse here
+    than keeping a near-duplicate, since ingest has no human to confirm.
+    """
     text = memory.get("headline", "") + " " + _norm_tags(memory.get("tags", ""))
     hits = search(conn, text, {"mem_type": "fact", "limit": 3,
-                               "project_filter": memory.get("project") or None})
+                               "project_filter": memory.get("project") or None,
+                               "min_cosine": _DEDUP_MIN_COSINE})
     return [h for h in hits if h["score"] > 0]
 
 

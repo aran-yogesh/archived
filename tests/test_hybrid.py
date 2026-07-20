@@ -121,6 +121,28 @@ def test_tag_match_outranks_body_only(conn):
     assert store.search(conn, "redis")[0]["id"] == tagged
 
 
+def test_dedup_bar_is_stricter_than_search(conn, monkeypatch):
+    """A ~0.71-cosine neighbour surfaces in search but is not deduped."""
+    monkeypatch.setattr(embed, "embed_text",
+                        lambda t: array("f", [1.0, 0.0]).tobytes())
+    store.save(conn, {"headline": "deploys fail on node twenty"})
+    # query vector [1,1] has cosine 0.707 with the stored [1,0]
+    monkeypatch.setattr(embed, "embed_query",
+                        lambda t: array("f", [1.0, 1.0]).tobytes())
+    query = "totally different words here"
+    assert store.search(conn, query)                       # 0.71 >= 0.6: surfaces
+    assert store.find_similar(conn, {"headline": query}) == []  # 0.71 < 0.8: kept
+
+
+def test_total_boost_is_capped(conn):
+    """Stacked boosts never exceed one RRF rank step, so relevance leads."""
+    hit = {"recall_count": 10, "project": "p", "tags": "redis", "freshness": 1.0}
+    uncapped = (10 * store._BOOST_RECALL + store._BOOST_PROJECT
+                + store._BOOST_TAG + store._BOOST_FRESH)
+    assert uncapped > store._BOOST_CAP  # this scenario would exceed a rank step
+    assert store._boosts(hit, "redis", {"project": "p"}) == store._BOOST_CAP
+
+
 def test_migration_adds_recall_columns(tmp_path):
     """A database from before the recall columns opens and works."""
     path = str(tmp_path / "old.db")
