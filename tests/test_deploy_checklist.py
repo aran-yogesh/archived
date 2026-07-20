@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -136,17 +137,36 @@ def test_mcp_server_stdio_handshake(env):
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
     ]) + "\n"
-    out = subprocess.run(
+    proc = subprocess.Popen(
         [sys.executable, "-m", "archived.server"],
-        input=messages, capture_output=True, text=True, env=env, timeout=60,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=env,
     )
+    # Read stdout in a thread and stop at the tools/list reply. stdin is kept
+    # open the whole time so the server never sees EOF and shuts down before
+    # flushing the reply — that race made this test flaky on loaded runners.
     tools = []
-    for line in out.stdout.splitlines():
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == 2:
-            tools = [t["name"] for t in msg["result"]["tools"]]
+
+    def _read_reply():
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if msg.get("id") == 2:
+                tools[:] = [t["name"] for t in msg["result"]["tools"]]
+                return
+
+    reader = threading.Thread(target=_read_reply, daemon=True)
+    reader.start()
+    proc.stdin.write(messages)
+    proc.stdin.flush()
+    reader.join(timeout=60)
+    proc.stdin.close()
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
     assert tools == ["save_memory", "search_memory",
-                     "get_memory", "recent_memories"], out.stderr[:500]
+                     "get_memory", "recent_memories"]
