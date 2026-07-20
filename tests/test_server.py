@@ -58,6 +58,13 @@ def test_get_missing_memory():
     assert server.get_memory(99) == "No memory #99."
 
 
+def test_get_memory_marks_recalled():
+    server.save_memory("token budget is 8k for hooks")
+    server.get_memory(1)
+    server.get_memory(1)
+    assert store.get(server._conn, 1)["recall_count"] == 2
+
+
 def test_recent_diary():
     server.save_memory("built the storage core", meta={"type": "log",
                                                        "project": "archived"})

@@ -49,3 +49,7 @@ def test_ingest_skips_duplicate_facts(env):
 
 def test_hot_empty_project_prints_nothing(env):
     assert run(["hot", "nothing-here"], env) == ""
+
+
+def test_backfill_reports_count(env):
+    assert run(["backfill"], env).strip() == "embedded 0 memories"

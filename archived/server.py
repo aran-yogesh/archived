@@ -77,6 +77,10 @@ def get_memory(memory_id: int) -> str:
     mem = store.get(_db(), memory_id)
     if not mem:
         return f"No memory #{memory_id}."
+    # Reading a memory is intentionally a write: it bumps the recall counter
+    # so often-used memories rank higher later. The single-user MCP server is
+    # serial, so the extra commit per read is harmless here.
+    store.mark_recalled(_db(), [memory_id])
     parts = [f"#{mem['id']} [{mem['type']}] {mem['headline']}"]
     if mem["body"]:
         parts.append(mem["body"])
