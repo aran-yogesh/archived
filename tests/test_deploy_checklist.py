@@ -55,7 +55,7 @@ def test_mcp_config_launches_from_plugin_root():
 
 def test_hooks_config_references_existing_scripts():
     hooks = _read_json("plugin", "hooks", "hooks.json")["hooks"]
-    assert set(hooks) == {"SessionStart", "SessionEnd"}
+    assert set(hooks) == {"SessionStart", "UserPromptSubmit", "SessionEnd"}
     for event, groups in hooks.items():
         for group in groups:
             for hook in group["hooks"]:
