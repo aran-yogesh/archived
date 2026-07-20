@@ -1,6 +1,7 @@
 """Tests for the per-prompt recall hook (UserPromptSubmit)."""
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -113,6 +114,25 @@ def test_missing_session_id_still_works(db, state):
     payload = {"prompt": "how is the churn XGBoost model tuned",
                "cwd": "/nowhere/demo"}
     assert recall_hook.recall(payload, state)
+
+
+def test_search_error_stays_silent_and_logs(db, state, tmp_path, monkeypatch, capsys):
+    """A store.search failure must print nothing and log the error."""
+    log = tmp_path / "hook.log"
+    monkeypatch.setattr(recall_hook, "LOG_FILE", str(log))
+    monkeypatch.setattr(recall_hook, "STATE_FILE", state)
+
+    def boom(*args):
+        raise RuntimeError("db exploded")
+
+    monkeypatch.setattr(recall_hook.store, "search", boom)
+    monkeypatch.setattr(
+        sys, "stdin",
+        io.StringIO(json.dumps(_payload("how is the churn XGBoost model tuned"))),
+    )
+    recall_hook.main()
+    assert capsys.readouterr().out == ""       # silent: 0 tokens
+    assert "db exploded" in log.read_text()    # error logged for debugging
 
 
 # --- end to end: run the script exactly like Claude Code does ----------------

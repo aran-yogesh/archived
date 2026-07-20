@@ -9,6 +9,7 @@ All failures are silent — a broken hook must never disturb the user —
 but get logged to ~/.archived/hook.log for debugging.
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -22,7 +23,30 @@ LOG_FILE = os.path.expanduser("~/.archived/hook.log")
 STATE_FILE = os.path.expanduser("~/.archived/recall_seen.json")
 MIN_PROMPT_CHARS = 15  # "yes", "ok" etc. are never worth a search
 LIMIT = 3
+MAX_SESSIONS = 50  # cap state-file growth; oldest sessions are dropped
 HINT = "[archived] call get_memory(id) for details on any memory above."
+
+
+@contextlib.contextmanager
+def _locked(state_path):
+    """Hold an exclusive cross-process lock while updating the state file.
+
+    Uses fcntl where available (macOS/Linux) so two hooks firing at once
+    can't clobber each other's read-modify-write. On platforms without
+    fcntl (e.g. Windows) it is a no-op — the atomic replace still keeps
+    the file from being corrupted.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    with open(state_path + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _log(msg):
@@ -42,16 +66,28 @@ def _seen_ids(state_path, session_id):
 
 
 def _mark_seen(state_path, session_id, ids):
-    """Add ids to the injected list for this session."""
-    try:
-        with open(state_path) as f:
-            state = json.load(f)
-    except Exception:
-        state = {}
-    state[session_id] = state.get(session_id, []) + ids
+    """Add ids to this session's injected list, bounded and race-safe.
+
+    Locks the file for the whole read-modify-write, re-inserts the current
+    session as most-recent, keeps only the newest MAX_SESSIONS sessions so
+    the file can't grow forever, and replaces it atomically.
+    """
     os.makedirs(os.path.dirname(state_path), exist_ok=True)
-    with open(state_path, "w") as f:
-        json.dump(state, f)
+    with _locked(state_path):
+        try:
+            with open(state_path) as f:
+                state = json.load(f)
+        except Exception:
+            state = {}
+        # pop + re-add moves this session to the end (most-recent) so an
+        # active session is never the one pruned below.
+        state[session_id] = state.pop(session_id, []) + ids
+        for old in list(state)[:-MAX_SESSIONS]:
+            del state[old]
+        tmp = state_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, state_path)
 
 
 def recall(payload, state_path=STATE_FILE):
