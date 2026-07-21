@@ -110,6 +110,9 @@ def recent_memories(project: str = "", limit: int = 7) -> str:
 
 def main():
     """Run the server over stdio (what MCP clients expect)."""
+    # Fill in embeddings for memories saved before the [semantic] extra was
+    # installed. No-op when nothing is missing, so it's cheap on every start.
+    store.maybe_backfill(_db())
     mcp.run()
 
 

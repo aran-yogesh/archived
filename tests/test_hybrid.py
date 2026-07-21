@@ -75,6 +75,25 @@ def test_backfill_fills_only_missing(conn, monkeypatch):
     assert store.backfill_embeddings(conn) == 0    # nothing left to fill
 
 
+def test_maybe_backfill_fills_when_now_available(conn, monkeypatch):
+    """Rows saved before embeddings existed get filled once they're available."""
+    monkeypatch.setattr(embed, "embed_text", lambda t: None)
+    store.save(conn, {"headline": "saved before embeddings existed"})
+    assert store._missing_embeddings(conn) == 1
+    monkeypatch.setattr(embed, "embed_text", lambda t: _fake_embed(t))
+    assert store.maybe_backfill(conn) == 1
+    assert store._missing_embeddings(conn) == 0
+    assert store.maybe_backfill(conn) == 0  # nothing left, cheap no-op
+
+
+def test_maybe_backfill_noop_without_embeddings(conn, monkeypatch):
+    """With embeddings unavailable, startup backfill fills nothing."""
+    monkeypatch.setattr(embed, "embed_text", lambda t: None)
+    store.save(conn, {"headline": "still no embedding"})
+    assert store.maybe_backfill(conn) == 0
+    assert store._missing_embeddings(conn) == 1
+
+
 def test_hot_memories_never_embedded(conn):
     store.set_hot(conn, "api", "left off: rate limiter")
     row = conn.execute("SELECT embedding FROM memories WHERE type = 'hot'"
