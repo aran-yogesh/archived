@@ -53,3 +53,16 @@ def test_hot_empty_project_prints_nothing(env):
 
 def test_backfill_reports_count(env):
     assert run(["backfill"], env).strip() == "embedded 0 memories"
+
+
+def test_doctor_empty_db(env):
+    out = run(["doctor"], env)
+    assert "memories:     0" in out
+    assert "last capture: never" in out
+
+
+def test_doctor_counts_after_ingest(env):
+    run(["ingest"], env, stdin=json.dumps(CAPTURE))
+    out = run(["doctor"], env)
+    assert "facts 1" in out and "logs 1" in out and "hot 1" in out
+    assert "last capture: never" not in out
