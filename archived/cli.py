@@ -6,13 +6,14 @@ Commands:
   archived search <query...>    search from the terminal
   archived recent               show the session diary
   archived backfill             embed memories missing embeddings
+  archived config [key [value]] view or change retrieval settings
 """
 
 import argparse
 import json
 import sys
 
-from archived import store
+from archived import config, store
 
 
 def _cmd_hot(conn, args):
@@ -75,6 +76,25 @@ def _cmd_backfill(conn, args):
     print(f"embedded {store.backfill_embeddings(conn)} memories")
 
 
+def _cmd_config(conn, args):
+    """Show settings, or set one with `archived config <key> <value>`."""
+    if args.key is None:
+        for key, (_, help_text) in config.SETTINGS.items():
+            print(f"{key} = {config.get(key)}   # {help_text}")
+        return
+    if args.value is None:
+        print(config.get(args.key))
+        return
+    try:
+        stored = config.set_value(args.key, args.value)
+    except KeyError:
+        sys.exit(f"unknown setting '{args.key}'; "
+                 f"known: {', '.join(config.SETTINGS)}")
+    except ValueError as exc:
+        sys.exit(f"invalid value: {exc}")
+    print(f"{args.key} = {stored}")
+
+
 def main():
     """Parse arguments and dispatch to a subcommand."""
     p = argparse.ArgumentParser(prog="archived")
@@ -98,6 +118,11 @@ def main():
 
     sp = sub.add_parser("backfill", help="embed memories missing embeddings")
     sp.set_defaults(fn=_cmd_backfill)
+
+    sp = sub.add_parser("config", help="view or change retrieval settings")
+    sp.add_argument("key", nargs="?", help="setting name (omit to list all)")
+    sp.add_argument("value", nargs="?", help="new value (omit to just read)")
+    sp.set_defaults(fn=_cmd_config)
 
     args = p.parse_args()
     conn = store.connect()
