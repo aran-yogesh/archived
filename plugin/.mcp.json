@@ -1,6 +1,8 @@
 {
-  "archived": {
-    "command": "uv",
-    "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/..", "archived-server"]
+  "mcpServers": {
+    "archived": {
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/..", "archived-server"]
+    }
   }
 }
