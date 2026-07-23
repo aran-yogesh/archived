@@ -46,7 +46,7 @@ def test_marketplace_points_at_plugin():
 
 def test_mcp_config_launches_from_plugin_root():
     mcp = _read_json("plugin", ".mcp.json")
-    server = mcp["archived"]
+    server = mcp["mcpServers"]["archived"]
     assert server["command"] == "uv"
     # the --directory arg must resolve to the repo (where pyproject lives)
     directory = [a for a in server["args"] if "CLAUDE_PLUGIN_ROOT" in a][0]
