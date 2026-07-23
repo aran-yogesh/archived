@@ -90,6 +90,11 @@ def _migrate(conn):
             conn.execute(f"ALTER TABLE memories ADD COLUMN {col} {spec}")
 
 
+def db_path():
+    """The database file archived will use (respects ARCHIVED_DB)."""
+    return os.environ.get("ARCHIVED_DB", DEFAULT_DB)
+
+
 def connect(db_path=None):
     """Open (and create if needed) the archived database."""
     path = db_path or os.environ.get("ARCHIVED_DB", DEFAULT_DB)
@@ -317,6 +322,20 @@ def get(conn, mem_id):
         (mem_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def stats(conn):
+    """Health numbers for the doctor command: counts, gaps, last capture."""
+    by_type = {r["type"]: r["n"] for r in conn.execute(
+        "SELECT type, count(*) n FROM memories WHERE superseded_by IS NULL "
+        "GROUP BY type")}
+    missing = conn.execute(
+        "SELECT count(*) n FROM memories "
+        "WHERE embedding IS NULL AND type != 'hot'").fetchone()["n"]
+    last_capture = conn.execute(
+        "SELECT max(ts) t FROM memories WHERE type = 'log'").fetchone()["t"]
+    return {"by_type": by_type, "total": sum(by_type.values()),
+            "missing_embeddings": missing, "last_capture": last_capture}
 
 
 def recent(conn, opts=None):

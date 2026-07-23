@@ -27,6 +27,11 @@ def _get_model():
     return _model
 
 
+def available():
+    """True when embeddings can actually be produced (fastembed loads)."""
+    return _get_model() is not None
+
+
 def embed_text(text):
     """Turn memory text into float32 embedding bytes, or None when
     embeddings are unavailable (callers then stay keyword-only)."""

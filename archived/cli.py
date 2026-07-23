@@ -6,13 +6,15 @@ Commands:
   archived search <query...>    search from the terminal
   archived recent               show the session diary
   archived backfill             embed memories missing embeddings
+  archived doctor               show where data lives and what's in it
 """
 
 import argparse
 import json
+import os
 import sys
 
-from archived import store
+from archived import embed, store
 
 
 def _cmd_hot(conn, args):
@@ -75,6 +77,22 @@ def _cmd_backfill(conn, args):
     print(f"embedded {store.backfill_embeddings(conn)} memories")
 
 
+def _cmd_doctor(conn, args):
+    """Print a health summary so a user can see the setup is working."""
+    st = store.stats(conn)
+    by = st["by_type"]
+    path = store.db_path()
+    size_kb = os.path.getsize(path) / 1024 if os.path.exists(path) else 0
+    embeddings = "on" if embed.available() else "off (keyword-only)"
+    print("archived doctor")
+    print(f"  db:           {path} ({size_kb:.0f} KB)")
+    print(f"  memories:     {st['total']} "
+          f"(facts {by.get('fact', 0)}, logs {by.get('log', 0)}, "
+          f"hot {by.get('hot', 0)})")
+    print(f"  embeddings:   {embeddings}, {st['missing_embeddings']} missing")
+    print(f"  last capture: {st['last_capture'] or 'never'}")
+
+
 def main():
     """Parse arguments and dispatch to a subcommand."""
     p = argparse.ArgumentParser(prog="archived")
@@ -98,6 +116,9 @@ def main():
 
     sp = sub.add_parser("backfill", help="embed memories missing embeddings")
     sp.set_defaults(fn=_cmd_backfill)
+
+    sp = sub.add_parser("doctor", help="show where data lives and what's in it")
+    sp.set_defaults(fn=_cmd_doctor)
 
     args = p.parse_args()
     conn = store.connect()
