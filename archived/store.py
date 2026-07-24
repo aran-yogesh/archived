@@ -70,6 +70,14 @@ CREATE TRIGGER IF NOT EXISTS mem_au AFTER UPDATE ON memories BEGIN
     INSERT INTO mem_fts(rowid, headline, body, tags)
     VALUES (new.id, new.headline, new.body, new.tags);
 END;
+
+-- one row per source (transcript / project dir) already mined, so a
+-- re-run skips work it has done. mtime lets a changed file be re-mined.
+CREATE TABLE IF NOT EXISTS mined_sources (
+    path TEXT PRIMARY KEY,
+    mtime REAL NOT NULL DEFAULT 0,
+    ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 """
 
 # columns every search candidate carries; the extras (tags, recall_count,
@@ -102,6 +110,16 @@ def connect(db_path=None):
     return conn
 
 
+def normalize_text(text):
+    """Tidy memory text: strip ends and collapse internal whitespace runs.
+
+    Keeps content intact (no spell/quote rewriting) — just removes the
+    ragged spacing and stray newlines that ingest and mining tend to
+    produce, so identical facts written by different paths compare equal.
+    """
+    return " ".join((text or "").split())
+
+
 def _norm_tags(tags):
     """Turn a tag list (or string) into one lowercase space-separated string."""
     if isinstance(tags, str):
@@ -125,8 +143,8 @@ def save(conn, memory):
         raise ValueError(f"type must be one of {TYPES}")
     if not memory.get("headline", "").strip():
         raise ValueError("headline is required")
-    headline = memory["headline"].strip()
-    body = memory.get("body", "").strip()
+    headline = normalize_text(memory["headline"])
+    body = normalize_text(memory.get("body", ""))
     tags = _norm_tags(memory.get("tags", ""))
     blob = None
     if mtype != "hot":
@@ -353,3 +371,55 @@ def get_hot(conn, project):
         (project,),
     ).fetchone()
     return row["body"] if row else ""
+
+
+def was_mined(conn, path, mtime):
+    """True if this source was already mined at this modification time.
+
+    A source whose file changed since (newer mtime) reports False so the
+    miner reprocesses it; an unchanged, already-seen source is skipped.
+    """
+    row = conn.execute(
+        "SELECT mtime FROM mined_sources WHERE path = ?", (path,)).fetchone()
+    return row is not None and row["mtime"] >= mtime
+
+
+def mark_mined(conn, path, mtime):
+    """Record that a source has been mined, updating its mtime if newer."""
+    conn.execute(
+        "INSERT INTO mined_sources (path, mtime) VALUES (?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET "
+        "mtime = excluded.mtime, ts = strftime('%Y-%m-%dT%H:%M:%SZ','now')",
+        (path, mtime))
+    conn.commit()
+
+
+def all_facts(conn):
+    """Every live fact with its embedding, for maintenance passes (dedup)."""
+    rows = conn.execute(
+        "SELECT id, headline, body, tags, project, ts, embedding "
+        "FROM memories WHERE type = 'fact' AND superseded_by IS NULL "
+        "ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def supersede(conn, old_id, new_id):
+    """Mark old_id as superseded by new_id (dedup keeps the newer fact)."""
+    conn.execute("UPDATE memories SET superseded_by = ? WHERE id = ?",
+                 (new_id, old_id))
+    conn.commit()
+
+
+def counts(conn):
+    """Return {type: live-count} plus embedding coverage, for `doctor`."""
+    by_type = {t: 0 for t in TYPES}
+    for r in conn.execute(
+        "SELECT type, count(*) AS n FROM memories "
+        "WHERE superseded_by IS NULL GROUP BY type"):
+        by_type[r["type"]] = r["n"]
+    embedded = conn.execute(
+        "SELECT count(*) AS n FROM memories "
+        "WHERE type != 'hot' AND embedding IS NOT NULL").fetchone()["n"]
+    embeddable = conn.execute(
+        "SELECT count(*) AS n FROM memories WHERE type != 'hot'").fetchone()["n"]
+    return {"by_type": by_type, "embedded": embedded, "embeddable": embeddable}
