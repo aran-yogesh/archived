@@ -1,0 +1,9 @@
+# archived MCP server for OpenAI Codex CLI.
+# Merge this into ~/.codex/config.toml, editing the --directory path to
+# wherever you cloned archived. Codex gets the four memory tools
+# (save/search/get/recent); it has no session hooks, so capture is
+# agent-driven — tell Codex to save what matters.
+
+[mcp_servers.archived]
+command = "uv"
+args = ["run", "--directory", "/ABSOLUTE/PATH/TO/archived", "archived-server"]

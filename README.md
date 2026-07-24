@@ -55,8 +55,13 @@ Without the extra, everything silently stays keyword-only.
 ```
 
 The plugin adds: the 4 MCP tools, a `remember` skill (capture discipline),
-a SessionStart hook (injects hot context), and a SessionEnd hook
-(summarizes the session via a small model call and saves log/facts/hot).
+and five hooks — SessionStart (injects hot context), UserPromptSubmit
+(recalls memories relevant to the prompt), SessionEnd (summarizes the
+session and saves log/facts/hot), plus two that stop long or crashed
+sessions losing context: **Stop** backgrounds a capture every ~15 messages,
+and **PreCompact** captures right before Claude compacts the context away.
+All captures run silently in the background — they never block or interrupt
+the agent.
 
 ### Codex (tools only — agent-driven capture)
 
@@ -68,9 +73,12 @@ command = "uv"
 args = ["run", "--directory", "/Users/aran/Desktop/archived", "archived-server"]
 ```
 
-### Any other MCP client
+### Cursor, Gemini CLI, and any other MCP client
 
-Same command: `uv run --directory /path/to/archived archived-server` (stdio).
+Ready-to-copy configs and tool-agnostic shell hooks (hot-context injection,
+session-end auto-capture, manual save) live in [`integrations/`](integrations/).
+The server command is always `uv run --directory /path/to/archived
+archived-server` (stdio).
 
 ## CLI
 
@@ -78,7 +86,30 @@ Same command: `uv run --directory /path/to/archived archived-server` (stdio).
 uv run archived search xgboost     # search from the terminal
 uv run archived recent             # session diary
 uv run archived hot my-project     # show a hot slot
+uv run archived save "<headline>" "<body>"   # save one fact by hand
 uv run archived backfill           # embed memories missing embeddings
+```
+
+### Backfill history & keep it tidy
+
+New install shouldn't start empty. Mining reaches back through history and
+turns it into the same fact/log memories, through the normal dedup path:
+
+```bash
+uv run archived mine                        # mine past Claude Code transcripts
+uv run archived mine --since 30 --limit 20  # bound by age (days) / count
+uv run archived mine-project ~/code/myapp   # seed facts from manifests + git log
+uv run archived capture <transcript.jsonl>  # ingest one session transcript
+```
+
+Mining reuses the capture recipe (a `claude -p --model haiku` call per
+transcript), records each source so re-runs only do new work, and skips
+near-duplicates. Then keep the store healthy:
+
+```bash
+uv run archived doctor             # counts, embedding coverage, duplicates, issues
+uv run archived dedup              # preview near-duplicate fact merges
+uv run archived dedup --apply      # merge them (older facts superseded, not deleted)
 ```
 
 Debug log for the capture hook: `~/.archived/hook.log`.
@@ -86,6 +117,8 @@ Debug log for the capture hook: `~/.archived/hook.log`.
 ## Roadmap
 
 - [x] Semantic search: hybrid BM25 + embeddings via the `semantic` extra
+- [x] Mining: backfill memories from past transcripts and project dirs
+- [x] Multi-tool integrations: Codex, Cursor, Gemini CLI, generic shell hooks
 - [ ] Codex auto-capture when Codex ships lifecycle hooks
 - [ ] Sync/multi-device (the DB is one file — trivially syncable)
 - [ ] Web dashboard for browsing/editing memories

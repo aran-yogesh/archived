@@ -1,0 +1,9 @@
+{
+  "//": "archived MCP server for the Gemini CLI. Merge into ~/.gemini/settings.json, editing the --directory path to where you cloned archived. Gemini CLI transcripts live under ~/.gemini/tmp/<hash>/chats/ — point integrations/shell/archived-session-end.sh at the finished session file to auto-capture, or run `archived mine` to backfill.",
+  "mcpServers": {
+    "archived": {
+      "command": "uv",
+      "args": ["run", "--directory", "/ABSOLUTE/PATH/TO/archived", "archived-server"]
+    }
+  }
+}

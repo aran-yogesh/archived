@@ -1,0 +1,9 @@
+{
+  "//": "archived MCP server for Cursor. Copy to ~/.cursor/mcp.json (global) or .cursor/mcp.json (per-project), and edit the --directory path to where you cloned archived. For hot-context injection and manual saves, wire the scripts in integrations/shell/ into your workflow — Cursor has no session hooks.",
+  "mcpServers": {
+    "archived": {
+      "command": "uv",
+      "args": ["run", "--directory", "/ABSOLUTE/PATH/TO/archived", "archived-server"]
+    }
+  }
+}
