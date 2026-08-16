@@ -309,6 +309,25 @@ def backfill_embeddings(conn):
     return filled
 
 
+def _missing_embeddings(conn):
+    """How many searchable rows still have no embedding."""
+    return conn.execute(
+        "SELECT count(*) n FROM memories "
+        "WHERE embedding IS NULL AND type != 'hot'").fetchone()["n"]
+
+
+def maybe_backfill(conn):
+    """Auto-embed rows missing an embedding; returns how many got one.
+
+    Safe to call on startup: it is a cheap no-op when nothing is missing,
+    and when embeddings are unavailable backfill_embeddings stops on the
+    first row, so no model load is forced when there is no work to do.
+    """
+    if not _missing_embeddings(conn):
+        return 0
+    return backfill_embeddings(conn)
+
+
 def get(conn, mem_id):
     """Fetch one full memory by id (None if missing)."""
     row = conn.execute(
