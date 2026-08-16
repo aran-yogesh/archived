@@ -10,7 +10,7 @@ recency boosts nudge the order without drowning out relevance.
 import os
 import sqlite3
 
-from archived import embed
+from archived import config, embed
 
 DEFAULT_DB = os.path.expanduser("~/.archived/archived.db")
 
@@ -21,8 +21,8 @@ TYPES = ("fact", "log", "hot")
 
 _RRF_K = 60        # standard reciprocal-rank-fusion constant
 _POOL = 30         # candidates taken from each ranking before merging
-_MIN_COSINE = 0.6         # ignore rows less related than this when searching
-_DEDUP_MIN_COSINE = 0.8   # stricter bar for dedup: only near-identical facts
+# min_cosine (search bar), dedup_min_cosine (stricter dedup bar), and the
+# default search_limit are user-tunable — see archived/config.py.
 
 # boosts applied after the RRF merge. One list membership is worth at least
 # 1/(_RRF_K + _POOL) ~= 0.011, and the boosts below sum to more than that,
@@ -193,8 +193,8 @@ def _semantic_hits(conn, query, opts):
     """Rank embedded memories by cosine similarity to the query; empty
     when embeddings are unavailable or nothing is related enough.
 
-    opts["min_cosine"] sets the relatedness bar (default _MIN_COSINE);
-    the dedup path raises it so only near-identical facts match.
+    opts["min_cosine"] sets the relatedness bar (default: the configured
+    min_cosine); the dedup path raises it so only near-identical facts match.
 
     This scans every embedded row and scores it in Python (no ANN index).
     That is O(rows) per search — fine for a personal store of hundreds to
@@ -205,7 +205,7 @@ def _semantic_hits(conn, query, opts):
     if blob is None:
         return []
     qvec = embed.to_vector(blob)
-    min_cosine = opts.get("min_cosine", _MIN_COSINE)
+    min_cosine = opts.get("min_cosine", config.get("min_cosine"))
     extra, params = _filter_sql(opts)
     sql = f"""
     SELECT {_HIT_COLUMNS}, m.embedding FROM memories m
@@ -250,9 +250,9 @@ def _boosts(hit, query, opts):
 def search(conn, query, opts=None):
     """Hybrid search; returns token-lean headline rows, best first.
 
-    opts keys: limit (default 5), project (soft rank boost),
-    project_filter (hard filter), mem_type. Keyword (BM25) and semantic
-    (embedding cosine) rankings are merged with RRF, then boosted.
+    opts keys: limit (default: the configured search_limit), project (soft
+    rank boost), project_filter (hard filter), mem_type. Keyword (BM25) and
+    semantic (embedding cosine) rankings are merged with RRF, then boosted.
     """
     opts = opts or {}
     merged = _rrf(_keyword_hits(conn, query, opts),
@@ -261,21 +261,22 @@ def search(conn, query, opts=None):
         hit["score"] += _boosts(hit, query, opts)
     merged.sort(key=lambda h: h["score"], reverse=True)
     keep = ("id", "type", "headline", "project", "day", "score")
-    return [{k: h[k] for k in keep} for h in merged[:opts.get("limit", 5)]]
+    limit = opts.get("limit", config.get("search_limit"))
+    return [{k: h[k] for k in keep} for h in merged[:limit]]
 
 
 def find_similar(conn, memory):
     """Find existing facts similar to a new one, for the dedup loop.
 
-    Uses a stricter cosine bar (_DEDUP_MIN_COSINE) than normal search so
-    that automated ingest only skips near-identical facts, not merely
+    Uses a stricter cosine bar (the configured dedup_min_cosine) than normal
+    search so automated ingest only skips near-identical facts, not merely
     topically-related ones — dropping a genuinely new fact is worse here
     than keeping a near-duplicate, since ingest has no human to confirm.
     """
     text = memory.get("headline", "") + " " + _norm_tags(memory.get("tags", ""))
     hits = search(conn, text, {"mem_type": "fact", "limit": 3,
                                "project_filter": memory.get("project") or None,
-                               "min_cosine": _DEDUP_MIN_COSINE})
+                               "min_cosine": config.get("dedup_min_cosine")})
     return [h for h in hits if h["score"] > 0]
 
 
